@@ -20,6 +20,12 @@ vars:
     {{.CONTAINER_ENGINE}} exec -it shorturl-mysql mysql -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}
 
 tasks:
+  generate:
+    desc: Generate code using goctl
+    cmds:
+      - goctl api go -api shorturl.api -dir .
+    silent: true
+
   up:
     desc: Pull up containers
     deps:
@@ -51,12 +57,12 @@ tasks:
     desc: Migrate database
     deps:
       - up
-    sources:
-      - sql/*.sql
     cmds:
       - task: sleep:20
-      - for: sources
-        cmd: "{{.MYSQL_COMMAND}} < {{.ITEM}}"
+      - |
+        for sql in sql/*.sql; do
+          {{.MYSQL_COMMAND}} < $sql
+        done
     silent: true
 
   podman-machine-start:
