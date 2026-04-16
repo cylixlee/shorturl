@@ -20,6 +20,14 @@ vars:
     {{.CONTAINER_ENGINE}} exec -it shorturl-mysql mysql -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}
 
 tasks:
+  run:
+    desc: Run the short URL server.
+    deps:
+      - up
+    cmds:
+      - go run shorturl.go
+    silent: true
+
   generate:
     desc: Generate code using goctl
     cmds:
@@ -38,20 +46,23 @@ tasks:
 
   down:
     desc: Shut down containers
-    cmd: "{{.CONTAINER_ENGINE}} compose down 2>/dev/null"
+    cmds:
+      - "{{.CONTAINER_ENGINE}} compose down 2>/dev/null"
     silent: true
 
   clean:
     desc: Shut down containers and remove all data
     prompt: "DANGEROUS: Do you really want to remove all data?"
-    cmd: "{{.CONTAINER_ENGINE}} compose down -v 2>/dev/null"
+    cmds:
+      - "{{.CONTAINER_ENGINE}} compose down -v 2>/dev/null"
     silent: true
 
   database:
     desc: Connect to database CLI
     deps:
       - up
-    cmd: "{{.INTERACTIVE_MYSQL_COMMAND}}"
+    cmds:
+      - "{{.INTERACTIVE_MYSQL_COMMAND}}"
     interactive: true
     silent: true
 
@@ -95,12 +106,14 @@ tasks:
     desc: Sleep N seconds in PowerShell
     if: '{{eq OS "windows"}}'
     internal: true
-    cmd: pwsh -c "sleep {{index .MATCH 0}}"
+    cmds:
+      - pwsh -c "sleep {{index .MATCH 0}}"
     silent: true
 
   sleep-posix:*:
     desc: Sleep N seconds in POSIX Shell
     if: '{{ne OS "windows"}}'
     internal: true
-    cmd: sleep {{index .MATCH 0}}
+    cmds:
+      - sleep {{index .MATCH 0}}
     silent: true
