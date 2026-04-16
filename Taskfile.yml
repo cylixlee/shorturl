@@ -14,25 +14,36 @@ vars:
       else
         exit 1 # No supported container engine found
       fi
+  MYSQL_COMMAND: >-
+    {{.CONTAINER_ENGINE}} exec -i shorturl-mysql mysql -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}
+  INTERACTIVE_MYSQL_COMMAND: >-
+    {{.CONTAINER_ENGINE}} exec -it shorturl-mysql mysql -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}
 
 tasks:
   up:
     desc: Pull up containers
     deps:
       - podman-machine-start
-    cmd: "{{.CONTAINER_ENGINE}} compose up -d"
+    cmds:
+      - "{{.CONTAINER_ENGINE}} compose up -d"
     silent: true
 
   down:
     desc: Shut down containers
-    cmd: "{{.CONTAINER_ENGINE}} compose down > /dev/null 2>&1"
+    cmd: "{{.CONTAINER_ENGINE}} compose down 2>/dev/null"
+    silent: true
+
+  clean:
+    desc: Shut down containers and remove all data
+    prompt: "DANGEROUS: Do you really want to remove all data?"
+    cmd: "{{.CONTAINER_ENGINE}} compose down -v 2>/dev/null"
     silent: true
 
   database:
     desc: Connect to database CLI
     deps:
       - up
-    cmd: "{{.CONTAINER_ENGINE}} exec -it shorturl-mysql mysql -u root -p${MYSQL_ROOT_PASSWORD}"
+    cmd: "{{.INTERACTIVE_MYSQL_COMMAND}}"
     interactive: true
     silent: true
 
@@ -40,10 +51,12 @@ tasks:
     desc: Migrate database
     deps:
       - up
-    cmd: |
-      for sql in sql/*.sql; do
-        {{.CONTAINER_ENGINE}} exec -i shorturl-mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} < $sql
-      done
+    sources:
+      - sql/*.sql
+    cmds:
+      - task: sleep:20
+      - for: sources
+        cmd: "{{.MYSQL_COMMAND}} < {{.ITEM}}"
     silent: true
 
   podman-machine-start:
@@ -62,4 +75,24 @@ tasks:
           podman machine start
           ;;
       esac
+    silent: true
+
+  sleep:*:
+    desc: Sleep N seconds
+    cmds:
+      - task: sleep-powershell:{{index .MATCH 0}}
+      - task: sleep-posix:{{index .MATCH 0}}
+
+  sleep-powershell:*:
+    desc: Sleep N seconds in PowerShell
+    if: '{{eq OS "windows"}}'
+    internal: true
+    cmd: pwsh -c "sleep {{index .MATCH 0}}"
+    silent: true
+
+  sleep-posix:*:
+    desc: Sleep N seconds in POSIX Shell
+    if: '{{ne OS "windows"}}'
+    internal: true
+    cmd: sleep {{index .MATCH 0}}
     silent: true
