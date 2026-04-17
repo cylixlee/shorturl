@@ -8,7 +8,9 @@ type (
 	RedirectRequest {
 		ShortURL string `path:"shortUrl" validate:"required"`
 	}
-	RedirectResponse  {}
+	RedirectResponse {
+		LongURL string `json:"longUrl"`
+	}
 )
 
 service shorturl-api {

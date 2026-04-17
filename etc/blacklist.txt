@@ -2,3 +2,4 @@
 #
 # We should avoid bad words or reserved words when generating short URL using base62.
 
+shorten

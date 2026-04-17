@@ -8,6 +8,7 @@ type RedirectRequest struct {
 }
 
 type RedirectResponse struct {
+	LongURL string `json:"longUrl"`
 }
 
 type ShortenRequest struct {
