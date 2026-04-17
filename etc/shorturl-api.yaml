@@ -19,3 +19,8 @@ ShortDomain: localhost:8888
 
 CacheRedis:
   - Host: 127.0.0.1:6379
+
+BloomFilter:
+  Host: 127.0.0.1:6379
+  Key: BloomFilter
+  ExpectedElements: 1000000 # million

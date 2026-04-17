@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/cylixlee/shorturl/internal/logic"
+	"github.com/cylixlee/shorturl/internal/model"
 	"github.com/cylixlee/shorturl/internal/svc"
 	"github.com/cylixlee/shorturl/internal/types"
 	"github.com/go-playground/validator/v10"
@@ -29,7 +30,7 @@ func RedirectHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		l := logic.NewRedirectLogic(r.Context(), svcCtx)
 		resp, err := l.Redirect(&req)
 		if err != nil {
-			if errors.Is(err, logic.ErrNotFound) {
+			if errors.Is(err, model.ErrNotFound) {
 				http.NotFound(w, r)
 				return
 			}

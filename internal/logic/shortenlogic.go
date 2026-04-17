@@ -19,7 +19,6 @@ import (
 	"github.com/cylixlee/shorturl/pkg/detect"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/core/stores/sqlx"
 )
 
 var (
@@ -59,7 +58,7 @@ func (l *ShortenLogic) Shorten(req *types.ShortenRequest) (*types.ShortenRespons
 	if err == nil {
 		return nil, fmt.Errorf("This URL has been shortened as %s", v.Surl.String)
 	}
-	if !errors.Is(err, sqlx.ErrNotFound) {
+	if !errors.Is(err, model.ErrNotFound) {
 		logx.Errorw("unexpected error while finding map by md5", logx.Field("err", err))
 		return nil, err
 	}
@@ -75,7 +74,7 @@ func (l *ShortenLogic) Shorten(req *types.ShortenRequest) (*types.ShortenRespons
 	if err == nil {
 		return nil, ErrAlreadyShortURL
 	}
-	if !errors.Is(err, sqlx.ErrNotFound) {
+	if !errors.Is(err, model.ErrNotFound) {
 		logx.Errorw("unexpected error while finding map by surl", logx.Field("err", err))
 		return nil, err
 	}
@@ -102,6 +101,11 @@ func (l *ShortenLogic) Shorten(req *types.ShortenRequest) (*types.ShortenRespons
 	})
 	if err != nil {
 		logx.Errorw("error while inserting short URL into database", logx.Field("err", err))
+		return nil, err
+	}
+
+	if err := l.svcCtx.BloomFilter.Add([]byte(short)); err != nil {
+		logx.Errorw("error while adding short URL into BloomFilter", logx.Field("err", err))
 		return nil, err
 	}
 

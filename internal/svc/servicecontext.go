@@ -13,6 +13,8 @@ import (
 	"github.com/cylixlee/shorturl/internal/model"
 	"github.com/cylixlee/shorturl/pkg/blacklist"
 	"github.com/jxskiss/base62"
+	"github.com/zeromicro/go-zero/core/bloom"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 	"github.com/zeromicro/go-zero/core/stores/sqlx"
 )
 
@@ -23,6 +25,7 @@ type ServiceContext struct {
 	Dispencer     dispencer.Interface
 	Encoder       *base62.Encoding
 	Blacklist     blacklist.Interface
+	BloomFilter   *bloom.Filter
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -38,6 +41,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		c.Mysql.Locale,
 	)
 	conn := sqlx.NewMysql(dsn)
+	store := redis.New(c.BloomFilter.Host)
 
 	encoder := base62.StdEncoding
 	if c.EncodingBaseString != "" {
@@ -66,5 +70,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Dispencer:     dispencer.NewMysql(conn),
 		Encoder:       encoder,
 		Blacklist:     blacklist.Build(),
+		BloomFilter:   bloom.New(store, c.BloomFilter.Key, 20*c.BloomFilter.ExpectedElements),
 	}
 }
