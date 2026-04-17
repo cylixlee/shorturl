@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/zeromicro/go-zero/core/stores/builder"
+	"github.com/zeromicro/go-zero/core/stores/cache"
+	"github.com/zeromicro/go-zero/core/stores/sqlc"
 	"github.com/zeromicro/go-zero/core/stores/sqlx"
 	"github.com/zeromicro/go-zero/core/stringx"
 )
@@ -21,6 +23,10 @@ var (
 	mapRows                = strings.Join(mapFieldNames, ",")
 	mapRowsExpectAutoSet   = strings.Join(stringx.Remove(mapFieldNames, "`id`", "`create_at`", "`create_time`", "`created_at`", "`update_at`", "`update_time`", "`updated_at`"), ",")
 	mapRowsWithPlaceHolder = strings.Join(stringx.Remove(mapFieldNames, "`id`", "`create_at`", "`create_time`", "`created_at`", "`update_at`", "`update_time`", "`updated_at`"), "=?,") + "=?"
+
+	cacheMapIdPrefix   = "cache:map:id:"
+	cacheMapMd5Prefix  = "cache:map:md5:"
+	cacheMapSurlPrefix = "cache:map:surl:"
 )
 
 type (
@@ -34,7 +40,7 @@ type (
 	}
 
 	defaultMapModel struct {
-		conn  sqlx.SqlConn
+		sqlc.CachedConn
 		table string
 	}
 
@@ -49,27 +55,40 @@ type (
 	}
 )
 
-func newMapModel(conn sqlx.SqlConn) *defaultMapModel {
+func newMapModel(conn sqlx.SqlConn, c cache.CacheConf, opts ...cache.Option) *defaultMapModel {
 	return &defaultMapModel{
-		conn:  conn,
-		table: "`map`",
+		CachedConn: sqlc.NewConn(conn, c, opts...),
+		table:      "`map`",
 	}
 }
 
 func (m *defaultMapModel) Delete(ctx context.Context, id uint64) error {
-	query := fmt.Sprintf("delete from %s where `id` = ?", m.table)
-	_, err := m.conn.ExecCtx(ctx, query, id)
+	data, err := m.FindOne(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	mapIdKey := fmt.Sprintf("%s%v", cacheMapIdPrefix, id)
+	mapMd5Key := fmt.Sprintf("%s%v", cacheMapMd5Prefix, data.Md5)
+	mapSurlKey := fmt.Sprintf("%s%v", cacheMapSurlPrefix, data.Surl)
+	_, err = m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("delete from %s where `id` = ?", m.table)
+		return conn.ExecCtx(ctx, query, id)
+	}, mapIdKey, mapMd5Key, mapSurlKey)
 	return err
 }
 
 func (m *defaultMapModel) FindOne(ctx context.Context, id uint64) (*Map, error) {
-	query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", mapRows, m.table)
+	mapIdKey := fmt.Sprintf("%s%v", cacheMapIdPrefix, id)
 	var resp Map
-	err := m.conn.QueryRowCtx(ctx, &resp, query, id)
+	err := m.QueryRowCtx(ctx, &resp, mapIdKey, func(ctx context.Context, conn sqlx.SqlConn, v any) error {
+		query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", mapRows, m.table)
+		return conn.QueryRowCtx(ctx, v, query, id)
+	})
 	switch err {
 	case nil:
 		return &resp, nil
-	case sqlx.ErrNotFound:
+	case sqlc.ErrNotFound:
 		return nil, ErrNotFound
 	default:
 		return nil, err
@@ -77,13 +96,19 @@ func (m *defaultMapModel) FindOne(ctx context.Context, id uint64) (*Map, error) 
 }
 
 func (m *defaultMapModel) FindOneByMd5(ctx context.Context, md5 sql.NullString) (*Map, error) {
+	mapMd5Key := fmt.Sprintf("%s%v", cacheMapMd5Prefix, md5)
 	var resp Map
-	query := fmt.Sprintf("select %s from %s where `md5` = ? limit 1", mapRows, m.table)
-	err := m.conn.QueryRowCtx(ctx, &resp, query, md5)
+	err := m.QueryRowIndexCtx(ctx, &resp, mapMd5Key, m.formatPrimary, func(ctx context.Context, conn sqlx.SqlConn, v any) (i any, e error) {
+		query := fmt.Sprintf("select %s from %s where `md5` = ? limit 1", mapRows, m.table)
+		if err := conn.QueryRowCtx(ctx, &resp, query, md5); err != nil {
+			return nil, err
+		}
+		return resp.Id, nil
+	}, m.queryPrimary)
 	switch err {
 	case nil:
 		return &resp, nil
-	case sqlx.ErrNotFound:
+	case sqlc.ErrNotFound:
 		return nil, ErrNotFound
 	default:
 		return nil, err
@@ -91,13 +116,19 @@ func (m *defaultMapModel) FindOneByMd5(ctx context.Context, md5 sql.NullString) 
 }
 
 func (m *defaultMapModel) FindOneBySurl(ctx context.Context, surl sql.NullString) (*Map, error) {
+	mapSurlKey := fmt.Sprintf("%s%v", cacheMapSurlPrefix, surl)
 	var resp Map
-	query := fmt.Sprintf("select %s from %s where `surl` = ? limit 1", mapRows, m.table)
-	err := m.conn.QueryRowCtx(ctx, &resp, query, surl)
+	err := m.QueryRowIndexCtx(ctx, &resp, mapSurlKey, m.formatPrimary, func(ctx context.Context, conn sqlx.SqlConn, v any) (i any, e error) {
+		query := fmt.Sprintf("select %s from %s where `surl` = ? limit 1", mapRows, m.table)
+		if err := conn.QueryRowCtx(ctx, &resp, query, surl); err != nil {
+			return nil, err
+		}
+		return resp.Id, nil
+	}, m.queryPrimary)
 	switch err {
 	case nil:
 		return &resp, nil
-	case sqlx.ErrNotFound:
+	case sqlc.ErrNotFound:
 		return nil, ErrNotFound
 	default:
 		return nil, err
@@ -105,15 +136,39 @@ func (m *defaultMapModel) FindOneBySurl(ctx context.Context, surl sql.NullString
 }
 
 func (m *defaultMapModel) Insert(ctx context.Context, data *Map) (sql.Result, error) {
-	query := fmt.Sprintf("insert into %s (%s) values (?, ?, ?, ?, ?)", m.table, mapRowsExpectAutoSet)
-	ret, err := m.conn.ExecCtx(ctx, query, data.CreatedBy, data.IsDel, data.Lurl, data.Md5, data.Surl)
+	mapIdKey := fmt.Sprintf("%s%v", cacheMapIdPrefix, data.Id)
+	mapMd5Key := fmt.Sprintf("%s%v", cacheMapMd5Prefix, data.Md5)
+	mapSurlKey := fmt.Sprintf("%s%v", cacheMapSurlPrefix, data.Surl)
+	ret, err := m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("insert into %s (%s) values (?, ?, ?, ?, ?)", m.table, mapRowsExpectAutoSet)
+		return conn.ExecCtx(ctx, query, data.CreatedBy, data.IsDel, data.Lurl, data.Md5, data.Surl)
+	}, mapIdKey, mapMd5Key, mapSurlKey)
 	return ret, err
 }
 
 func (m *defaultMapModel) Update(ctx context.Context, newData *Map) error {
-	query := fmt.Sprintf("update %s set %s where `id` = ?", m.table, mapRowsWithPlaceHolder)
-	_, err := m.conn.ExecCtx(ctx, query, newData.CreatedBy, newData.IsDel, newData.Lurl, newData.Md5, newData.Surl, newData.Id)
+	data, err := m.FindOne(ctx, newData.Id)
+	if err != nil {
+		return err
+	}
+
+	mapIdKey := fmt.Sprintf("%s%v", cacheMapIdPrefix, data.Id)
+	mapMd5Key := fmt.Sprintf("%s%v", cacheMapMd5Prefix, data.Md5)
+	mapSurlKey := fmt.Sprintf("%s%v", cacheMapSurlPrefix, data.Surl)
+	_, err = m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("update %s set %s where `id` = ?", m.table, mapRowsWithPlaceHolder)
+		return conn.ExecCtx(ctx, query, newData.CreatedBy, newData.IsDel, newData.Lurl, newData.Md5, newData.Surl, newData.Id)
+	}, mapIdKey, mapMd5Key, mapSurlKey)
 	return err
+}
+
+func (m *defaultMapModel) formatPrimary(primary any) string {
+	return fmt.Sprintf("%s%v", cacheMapIdPrefix, primary)
+}
+
+func (m *defaultMapModel) queryPrimary(ctx context.Context, conn sqlx.SqlConn, v, primary any) error {
+	query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", mapRows, m.table)
+	return conn.QueryRowCtx(ctx, v, query, primary)
 }
 
 func (m *defaultMapModel) tableName() string {

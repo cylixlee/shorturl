@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/zeromicro/go-zero/core/stores/builder"
+	"github.com/zeromicro/go-zero/core/stores/cache"
+	"github.com/zeromicro/go-zero/core/stores/sqlc"
 	"github.com/zeromicro/go-zero/core/stores/sqlx"
 	"github.com/zeromicro/go-zero/core/stringx"
 )
@@ -21,6 +23,9 @@ var (
 	sequenceRows                = strings.Join(sequenceFieldNames, ",")
 	sequenceRowsExpectAutoSet   = strings.Join(stringx.Remove(sequenceFieldNames, "`id`", "`create_at`", "`create_time`", "`created_at`", "`update_at`", "`update_time`", "`updated_at`"), ",")
 	sequenceRowsWithPlaceHolder = strings.Join(stringx.Remove(sequenceFieldNames, "`id`", "`create_at`", "`create_time`", "`created_at`", "`update_at`", "`update_time`", "`updated_at`"), "=?,") + "=?"
+
+	cacheSequenceIdPrefix   = "cache:sequence:id:"
+	cacheSequenceStubPrefix = "cache:sequence:stub:"
 )
 
 type (
@@ -33,7 +38,7 @@ type (
 	}
 
 	defaultSequenceModel struct {
-		conn  sqlx.SqlConn
+		sqlc.CachedConn
 		table string
 	}
 
@@ -44,27 +49,39 @@ type (
 	}
 )
 
-func newSequenceModel(conn sqlx.SqlConn) *defaultSequenceModel {
+func newSequenceModel(conn sqlx.SqlConn, c cache.CacheConf, opts ...cache.Option) *defaultSequenceModel {
 	return &defaultSequenceModel{
-		conn:  conn,
-		table: "`sequence`",
+		CachedConn: sqlc.NewConn(conn, c, opts...),
+		table:      "`sequence`",
 	}
 }
 
 func (m *defaultSequenceModel) Delete(ctx context.Context, id uint64) error {
-	query := fmt.Sprintf("delete from %s where `id` = ?", m.table)
-	_, err := m.conn.ExecCtx(ctx, query, id)
+	data, err := m.FindOne(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	sequenceIdKey := fmt.Sprintf("%s%v", cacheSequenceIdPrefix, id)
+	sequenceStubKey := fmt.Sprintf("%s%v", cacheSequenceStubPrefix, data.Stub)
+	_, err = m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("delete from %s where `id` = ?", m.table)
+		return conn.ExecCtx(ctx, query, id)
+	}, sequenceIdKey, sequenceStubKey)
 	return err
 }
 
 func (m *defaultSequenceModel) FindOne(ctx context.Context, id uint64) (*Sequence, error) {
-	query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", sequenceRows, m.table)
+	sequenceIdKey := fmt.Sprintf("%s%v", cacheSequenceIdPrefix, id)
 	var resp Sequence
-	err := m.conn.QueryRowCtx(ctx, &resp, query, id)
+	err := m.QueryRowCtx(ctx, &resp, sequenceIdKey, func(ctx context.Context, conn sqlx.SqlConn, v any) error {
+		query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", sequenceRows, m.table)
+		return conn.QueryRowCtx(ctx, v, query, id)
+	})
 	switch err {
 	case nil:
 		return &resp, nil
-	case sqlx.ErrNotFound:
+	case sqlc.ErrNotFound:
 		return nil, ErrNotFound
 	default:
 		return nil, err
@@ -72,13 +89,19 @@ func (m *defaultSequenceModel) FindOne(ctx context.Context, id uint64) (*Sequenc
 }
 
 func (m *defaultSequenceModel) FindOneByStub(ctx context.Context, stub string) (*Sequence, error) {
+	sequenceStubKey := fmt.Sprintf("%s%v", cacheSequenceStubPrefix, stub)
 	var resp Sequence
-	query := fmt.Sprintf("select %s from %s where `stub` = ? limit 1", sequenceRows, m.table)
-	err := m.conn.QueryRowCtx(ctx, &resp, query, stub)
+	err := m.QueryRowIndexCtx(ctx, &resp, sequenceStubKey, m.formatPrimary, func(ctx context.Context, conn sqlx.SqlConn, v any) (i any, e error) {
+		query := fmt.Sprintf("select %s from %s where `stub` = ? limit 1", sequenceRows, m.table)
+		if err := conn.QueryRowCtx(ctx, &resp, query, stub); err != nil {
+			return nil, err
+		}
+		return resp.Id, nil
+	}, m.queryPrimary)
 	switch err {
 	case nil:
 		return &resp, nil
-	case sqlx.ErrNotFound:
+	case sqlc.ErrNotFound:
 		return nil, ErrNotFound
 	default:
 		return nil, err
@@ -86,15 +109,37 @@ func (m *defaultSequenceModel) FindOneByStub(ctx context.Context, stub string) (
 }
 
 func (m *defaultSequenceModel) Insert(ctx context.Context, data *Sequence) (sql.Result, error) {
-	query := fmt.Sprintf("insert into %s (%s) values (?, ?)", m.table, sequenceRowsExpectAutoSet)
-	ret, err := m.conn.ExecCtx(ctx, query, data.Stub, data.Timestamp)
+	sequenceIdKey := fmt.Sprintf("%s%v", cacheSequenceIdPrefix, data.Id)
+	sequenceStubKey := fmt.Sprintf("%s%v", cacheSequenceStubPrefix, data.Stub)
+	ret, err := m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("insert into %s (%s) values (?, ?)", m.table, sequenceRowsExpectAutoSet)
+		return conn.ExecCtx(ctx, query, data.Stub, data.Timestamp)
+	}, sequenceIdKey, sequenceStubKey)
 	return ret, err
 }
 
 func (m *defaultSequenceModel) Update(ctx context.Context, newData *Sequence) error {
-	query := fmt.Sprintf("update %s set %s where `id` = ?", m.table, sequenceRowsWithPlaceHolder)
-	_, err := m.conn.ExecCtx(ctx, query, newData.Stub, newData.Timestamp, newData.Id)
+	data, err := m.FindOne(ctx, newData.Id)
+	if err != nil {
+		return err
+	}
+
+	sequenceIdKey := fmt.Sprintf("%s%v", cacheSequenceIdPrefix, data.Id)
+	sequenceStubKey := fmt.Sprintf("%s%v", cacheSequenceStubPrefix, data.Stub)
+	_, err = m.ExecCtx(ctx, func(ctx context.Context, conn sqlx.SqlConn) (result sql.Result, err error) {
+		query := fmt.Sprintf("update %s set %s where `id` = ?", m.table, sequenceRowsWithPlaceHolder)
+		return conn.ExecCtx(ctx, query, newData.Stub, newData.Timestamp, newData.Id)
+	}, sequenceIdKey, sequenceStubKey)
 	return err
+}
+
+func (m *defaultSequenceModel) formatPrimary(primary any) string {
+	return fmt.Sprintf("%s%v", cacheSequenceIdPrefix, primary)
+}
+
+func (m *defaultSequenceModel) queryPrimary(ctx context.Context, conn sqlx.SqlConn, v, primary any) error {
+	query := fmt.Sprintf("select %s from %s where `id` = ? limit 1", sequenceRows, m.table)
+	return conn.QueryRowCtx(ctx, v, query, primary)
 }
 
 func (m *defaultSequenceModel) tableName() string {

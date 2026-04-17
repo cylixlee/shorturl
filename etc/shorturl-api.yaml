@@ -16,3 +16,6 @@ Mysql:
 
 Blacklist: etc/blacklist.txt
 ShortDomain: localhost:8888
+
+CacheRedis:
+  - Host: 127.0.0.1:6379

@@ -20,6 +20,8 @@ vars:
   INTERACTIVE_MYSQL_COMMAND: >-
     {{.CONTAINER_ENGINE}} exec -it shorturl-mysql mysql -h 127.0.0.1 -u root
     -p${MYSQL_ROOT_PASSWORD}
+  INTERACTIVE_REDIS_COMMAND: >-
+    {{.CONTAINER_ENGINE}} exec -it shorturl-redis redis-cli
 
 tasks:
   run:
@@ -42,7 +44,7 @@ tasks:
         cp shorturl.go cmd/server/main.go
       - rm shorturl.go
       - mkdir -p internal/model
-      - goctl model mysql ddl -s "sql/*.sql" --dir "internal/model"
+      - goctl model mysql ddl -s "sql/*.sql" --dir "internal/model" -c
     silent: true
 
   up:
@@ -72,6 +74,15 @@ tasks:
       - up
     cmds:
       - "{{.INTERACTIVE_MYSQL_COMMAND}}"
+    interactive: true
+    silent: true
+
+  cache:
+    desc: Connect to cache CLI
+    deps:
+      - up
+    cmds:
+      - "{{.INTERACTIVE_REDIS_COMMAND}}"
     interactive: true
     silent: true
 

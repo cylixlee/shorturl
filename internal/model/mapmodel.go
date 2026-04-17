@@ -1,6 +1,9 @@
 package model
 
-import "github.com/zeromicro/go-zero/core/stores/sqlx"
+import (
+	"github.com/zeromicro/go-zero/core/stores/cache"
+	"github.com/zeromicro/go-zero/core/stores/sqlx"
+)
 
 var _ MapModel = (*customMapModel)(nil)
 
@@ -9,7 +12,6 @@ type (
 	// and implement the added methods in customMapModel.
 	MapModel interface {
 		mapModel
-		withSession(session sqlx.Session) MapModel
 	}
 
 	customMapModel struct {
@@ -18,12 +20,8 @@ type (
 )
 
 // NewMapModel returns a model for the database table.
-func NewMapModel(conn sqlx.SqlConn) MapModel {
+func NewMapModel(conn sqlx.SqlConn, c cache.CacheConf, opts ...cache.Option) MapModel {
 	return &customMapModel{
-		defaultMapModel: newMapModel(conn),
+		defaultMapModel: newMapModel(conn, c, opts...),
 	}
-}
-
-func (m *customMapModel) withSession(session sqlx.Session) MapModel {
-	return NewMapModel(sqlx.NewSqlConnFromSession(session))
 }

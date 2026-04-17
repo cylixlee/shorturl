@@ -61,8 +61,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 	return &ServiceContext{
 		Config:        c,
-		MapModel:      model.NewMapModel(conn),
-		SequenceModel: model.NewSequenceModel(conn),
+		MapModel:      model.NewMapModel(conn, c.CacheRedis),
+		SequenceModel: model.NewSequenceModel(conn, c.CacheRedis),
 		Dispencer:     dispencer.NewMysql(conn),
 		Encoder:       encoder,
 		Blacklist:     blacklist.Build(),
