@@ -9,9 +9,9 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/cylixlee/shorturl/internal/config"
-	"github.com/cylixlee/shorturl/internal/handler"
-	"github.com/cylixlee/shorturl/internal/svc"
+	"github.com/open-portfolios/shorturl/internal/config"
+	"github.com/open-portfolios/shorturl/internal/handler"
+	"github.com/open-portfolios/shorturl/internal/svc"
 	dotenv "github.com/joho/godotenv"
 
 	"github.com/zeromicro/go-zero/core/conf"

@@ -1,4 +1,4 @@
-module github.com/cylixlee/shorturl
+module github.com/open-portfolios/shorturl
 
 go 1.26.2
 

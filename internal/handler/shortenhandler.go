@@ -6,9 +6,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/cylixlee/shorturl/internal/logic"
-	"github.com/cylixlee/shorturl/internal/svc"
-	"github.com/cylixlee/shorturl/internal/types"
+	"github.com/open-portfolios/shorturl/internal/logic"
+	"github.com/open-portfolios/shorturl/internal/svc"
+	"github.com/open-portfolios/shorturl/internal/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )

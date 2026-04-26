@@ -6,7 +6,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/cylixlee/shorturl/internal/svc"
+	"github.com/open-portfolios/shorturl/internal/svc"
 
 	"github.com/zeromicro/go-zero/rest"
 )

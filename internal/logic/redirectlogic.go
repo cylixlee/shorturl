@@ -8,9 +8,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/cylixlee/shorturl/internal/model"
-	"github.com/cylixlee/shorturl/internal/svc"
-	"github.com/cylixlee/shorturl/internal/types"
+	"github.com/open-portfolios/shorturl/internal/model"
+	"github.com/open-portfolios/shorturl/internal/svc"
+	"github.com/open-portfolios/shorturl/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
