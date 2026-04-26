@@ -99,7 +99,7 @@ D --> |No| N2
 ```
 
 ## License
-Copyright Open Portfolios Authors 2026
+Copyright 2026 Open Portfolios Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
